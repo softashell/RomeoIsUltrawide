@@ -3,10 +3,11 @@
 Ultrawide fix for *Romeo Is a Dead Man*.
 
 ## How it works?
-- On every engine tick apply constraint adjustments to all UUserWidgets
+- On every engine tick apply constraint adjustments to all UUserWidgets for UI fixes
+- General ultrawide support through SUWSF - Somewhat Universal Widescreen Fix
 
 ## How to compile (UI "fixes" only)
-- Dump the sdk using Dumper-7 and paste it into the project directory
+- Dump the SDK using Dumper-7 and paste it into the project directory
 - Open .slnx file using Visual Studio (downgrade vcxproj or use preview version of VS)
 - Build!
 - Rename the DLL to anything you want with .asi extension
@@ -38,10 +39,8 @@ Bugs are expected 🤷‍♂️
 
 ## Credits
 This fix is based on **Lyall's UltrawidePatches** project.
-
 https://codeberg.org/Lyall/UltrawidePatches
-
 Base patch:
 Crime Boss: Rockay City
 
-and me😝
+Lyall, eu-tagami for releasing the initial version and me😝
