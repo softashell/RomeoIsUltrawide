@@ -41,7 +41,7 @@ Bugs are expected 🤷‍♂️
 ## Credits
 This fix is based on **Lyall's UltrawidePatches** project.
 https://codeberg.org/Lyall/UltrawidePatches
-Base patch:
-Crime Boss: Rockay City
+
+Base patch: Crime Boss: Rockay City
 
 Lyall, eu-tagami for releasing the initial version and me😝
