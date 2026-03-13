@@ -14,7 +14,7 @@ Ultrawide fix for *Romeo Is a Dead Man*.
 - Done (if it doesn't compile with static_assert errors make sure you're compiling x64 version, if the error is single just comment the problematic line, lol)
 
 ## Installation
-1. Download the latest release
+1. Download the [latest release](https://github.com/weespin/Romeo-Is-a-Dead-Man-Ultrawide-Fix/releases/tag/0.0.1 "latest release")
 2. Extract the files
 3. Copy the contents to the game installation folder
 4. Launch the game
@@ -34,30 +34,10 @@ Bugs are expected ¯\_(ツ)_/¯
 
 ## Credits
 This fix is based on **Lyall's UltrawidePatches** project.
+
 https://codeberg.org/Lyall/UltrawidePatches
+
 Base patch:
 Crime Boss: Rockay City
 
 and me😝
-
-## What was changed
-- Folder structure adapted for *Romeo Is a Dead Man*
-- No changes were made to the original patch logic
-
-## Installation
-1. Download the latest release or ZIP
-2. Extract the files
-3. Copy the contents to the game installation folder
-4. Launch the game
-
-## Notes
-- Unofficial community fix
-- May cause issues in cutscenes
-- Tested on 32:9 resolutions
-- The fix is not fully complete.
-- Some HUD/UI elements may appear misaligned or stretched in ultrawide resolutions.
-- This project is not maintained, I'm only accepting pull requests
-- Thank you Lyall for your work :D 
-
-## License
-MIT License
