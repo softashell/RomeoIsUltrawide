@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="RIADMW_SomeUIFixes/RIADMW_SomeUIFixes.vcxproj" Id="eaa32576-571d-41bc-a6bc-5872b1e6cf41" />
+</Solution>
