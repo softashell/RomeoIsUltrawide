@@ -3,16 +3,17 @@
 Ultrawide fix for *Romeo Is a Dead Man*.
 
 ## How it works?
-- On every engine tick apply constraint adjustments to all UUserWidgets for UI fixes
-- General ultrawide support through SUWSF - Somewhat Universal Widescreen Fix
+- On every engine tick apply, constraint adjustments to all UUserWidgets for UI fixes
+- General ultrawide support through SUWSF – Somewhat Universal Widescreen Fix
 
 ## How to compile (UI "fixes" only)
 - Dump the SDK using Dumper-7 and paste it into the project directory
-- Open .slnx file using Visual Studio (downgrade vcxproj or use preview version of VS)
+- Throw a MinHook libMinHook.x64.lib file into "RIADMW_SomeUIFixes\lib"
+- Open .slnx file using Visual Studio (downgrade the vcxproj or use preview version of VS)
 - Build!
-- Rename the DLL to anything you want with .asi extension
-- Place the .asi file next to the game executable (also make sure you have a loader like winmm.dll present in the Binaries folder)
-- Done (if it doesn't compile with static_assert errors make sure you're compiling x64 version, if the error is single just comment the problematic line, lol)
+- Rename the DLL to anything you want with the .asi extension
+- Place the .asi file next to the game executable (also make, sure you have a loader like winmm.dll present in the Binaries folder)
+- Done (if it doesn't compile with static_assert errors, make sure you're compiling x64 version, if the error is a single one - just comment the problematic line, lol)
 
 ## Installation
 1. Download the [latest release](https://github.com/weespin/Romeo-Is-a-Dead-Man-Ultrawide-Fix/releases/tag/0.0.1 "latest release")
@@ -21,9 +22,9 @@ Ultrawide fix for *Romeo Is a Dead Man*.
 4. Launch the game
 
 ## Why?
-The main, the parent repo worked but cutscenes were stretched, UI was very broken and unplayable to me.
+The main (parent) repo worked but cutscenes were stretched, UI was very broken and unplayable to me.
 
-So I had the idea (had experience with UE4/5 and general Reverse Engineering) to create this thing.
+So I had the idea (I have experience with UE4/5 and general reverse Engineering) to create this thing.
 
 Just to play.
 
