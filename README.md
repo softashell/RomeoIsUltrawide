@@ -21,8 +21,12 @@ Ultrawide fix for *Romeo Is a Dead Man*.
 
 ## Why?
 The main, the parent repo worked but cutscenes were stretched, UI was very broken and unplayable to me.
-So I had the idea (had experience with UE4/5 and general Reverse Engineering) to create this thing. Just to play.
-Bugs are expected ¯\_(ツ)_/¯
+
+So I had the idea (had experience with UE4/5 and general Reverse Engineering) to create this thing.
+
+Just to play.
+
+Bugs are expected 🤷‍♂️
 
 ### Screenshots
 | Before | After |
