@@ -15,7 +15,7 @@ Ultrawide fix for *Romeo Is a Dead Man* ver 1.4.2 only!
 - Done (if it doesn't compile with static_assert errors, make sure you're compiling x64 version, if the error is a single one - just comment the problematic line, lol)
 
 ## Installation
-1. Download the [latest release](https://github.com/weespin/Romeo-Is-a-Dead-Man-Ultrawide-Fix/releases/tag/0.0.1 "latest release")
+1. Download the [latest release](https://github.com/weespin/Romeo-Is-a-Dead-Man-Ultrawide-Fix/releases/ "latest release")
 2. Extract the files
 3. Copy the contents to the game installation folder
 4. Launch the game
