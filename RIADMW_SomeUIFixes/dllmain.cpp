@@ -2,6 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <cstdio>
+#include <share.h>
 #include <MinHook.h>
 
 using namespace SDK;
@@ -40,17 +41,19 @@ UWorld* GetWorld()
 	return ptr ? *ptr : nullptr;
 }
 
-void CalcConstrainedSize(FVector2D vp) 
+void CalcConstrainedSize(FVector2D vp, float uiScale) 
 {
-	float aspect = vp.X / vp.Y;
+	float slateW = vp.X / uiScale;
+	float slateH = vp.Y / uiScale;
+	float aspect = slateW / slateH;
 
 	if (aspect > TARGET_ASPECT) 
 	{ 
-		g_ConstrainedH = vp.Y; g_ConstrainedW = vp.Y * TARGET_ASPECT; 
+		g_ConstrainedH = slateH; g_ConstrainedW = slateH * TARGET_ASPECT; 
 	}
 	else 
 	{ 
-		g_ConstrainedW = vp.X; g_ConstrainedH = vp.X / TARGET_ASPECT; 
+		g_ConstrainedW = slateW; g_ConstrainedH = slateW / TARGET_ASPECT; 
 	}
 }
 
@@ -67,14 +70,17 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 		FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
 		if (vp.X > 0) 
 		{
-			float aspect = vp.X / vp.Y;
-			float newW = (aspect > TARGET_ASPECT) ? vp.Y * TARGET_ASPECT : vp.X;
-			float newH = (aspect > TARGET_ASPECT) ? vp.Y : vp.X / TARGET_ASPECT;
+			float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
+			float slateW = vp.X / uiScale;
+			float slateH = vp.Y / uiScale;
+			float aspect = slateW / slateH;
+			float newW = (aspect > TARGET_ASPECT) ? slateH * TARGET_ASPECT : slateW;
+			float newH = (aspect > TARGET_ASPECT) ? slateH : slateW / TARGET_ASPECT;
 			if (newW != g_ConstrainedW || newH != g_ConstrainedH) {
 				g_ConstrainedW = newW;
 				g_ConstrainedH = newH;
-				Log("Viewport changed: %.0fx%.0f -> Constrained: %.0fx%.0f",
-					vp.X, vp.Y, g_ConstrainedW, g_ConstrainedH);
+				Log("Viewport changed: %.0fx%.0f (scale %.2f) -> Constrained: %.0fx%.0f",
+					vp.X, vp.Y, uiScale, g_ConstrainedW, g_ConstrainedH);
 			}
 		}
 	}
@@ -142,7 +148,8 @@ void MainThread()
 			FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
 			if (vp.X > 0)
 			{ 
-				CalcConstrainedSize(vp); 
+				float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
+				CalcConstrainedSize(vp, uiScale); 
 				break; 
 			}
 		}
@@ -188,8 +195,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
 		GetModuleFileNameA(hModule, logPath, MAX_PATH);
 
 		char* slash = strrchr(logPath, '\\');
-		if (slash) strcpy_s(slash + 1, MAX_PATH - (slash - logPath) - 1, "srvwidefixes.log");
-		fopen_s(&g_LogFile, logPath, "w");
+		if (slash) strcpy_s(slash + 1, MAX_PATH - (slash - logPath) - 1, "sevwidefixes.log");
+		g_LogFile = _fsopen(logPath, "w", _SH_DENYWR);
 
 		std::thread(MainThread).detach();
 	}
