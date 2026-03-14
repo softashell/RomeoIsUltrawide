@@ -3,26 +3,32 @@
 Ultrawide fix for *Romeo Is a Dead Man*.
 
 ## How it works?
-- On every engine tick apply constraint adjustments to all UUserWidgets
+- On every engine tick apply, constraint adjustments to all UUserWidgets for UI fixes
+- General ultrawide support through SUWSF – Somewhat Universal Widescreen Fix
 
 ## How to compile (UI "fixes" only)
-- Dump the sdk using Dumper-7 and paste it into the project directory
-- Open .slnx file using Visual Studio (downgrade vcxproj or use preview version of VS)
+- Dump the SDK using Dumper-7 and paste it into the project directory
+- Throw a MinHook libMinHook.x64.lib file into "RIADMW_SomeUIFixes\lib"
+- Open .slnx file using Visual Studio (downgrade the vcxproj or use preview version of VS)
 - Build!
-- Rename the DLL to anything you want with .asi extension
-- Place the .asi file next to the game executable (also make sure you have a loader like winmm.dll present in the Binaries folder)
-- Done (if it doesn't compile with static_assert errors make sure you're compiling x64 version, if the error is single just comment the problematic line, lol)
+- Rename the DLL to anything you want with the .asi extension
+- Place the .asi file next to the game executable (also make, sure you have a loader like winmm.dll present in the Binaries folder)
+- Done (if it doesn't compile with static_assert errors, make sure you're compiling x64 version, if the error is a single one - just comment the problematic line, lol)
 
 ## Installation
-1. Download the latest release
+1. Download the [latest release](https://github.com/weespin/Romeo-Is-a-Dead-Man-Ultrawide-Fix/releases/tag/0.0.1 "latest release")
 2. Extract the files
 3. Copy the contents to the game installation folder
 4. Launch the game
 
 ## Why?
-The main, the parent repo worked but cutscenes were stretched, UI was very broken and unplayable to me.
-So I had the idea (had experience with UE4/5 and general Reverse Engineering) to create this thing. Just to play.
-Bugs are expected ¯\_(ツ)_/¯
+The main (parent) repo worked but cutscenes were stretched, UI was very broken and unplayable to me.
+
+So I had the idea (I have experience with UE4/5 and general reverse Engineering) to create this thing.
+
+Just to play.
+
+Bugs are expected 🤷‍♂️
 
 ### Screenshots
 | Before | After |
@@ -35,29 +41,7 @@ Bugs are expected ¯\_(ツ)_/¯
 ## Credits
 This fix is based on **Lyall's UltrawidePatches** project.
 https://codeberg.org/Lyall/UltrawidePatches
-Base patch:
-Crime Boss: Rockay City
 
-and me😝
+Base patch: Crime Boss: Rockay City
 
-## What was changed
-- Folder structure adapted for *Romeo Is a Dead Man*
-- No changes were made to the original patch logic
-
-## Installation
-1. Download the latest release or ZIP
-2. Extract the files
-3. Copy the contents to the game installation folder
-4. Launch the game
-
-## Notes
-- Unofficial community fix
-- May cause issues in cutscenes
-- Tested on 32:9 resolutions
-- The fix is not fully complete.
-- Some HUD/UI elements may appear misaligned or stretched in ultrawide resolutions.
-- This project is not maintained, I'm only accepting pull requests
-- Thank you Lyall for your work :D 
-
-## License
-MIT License
+Lyall, eu-tagami for releasing the initial version and me😝
