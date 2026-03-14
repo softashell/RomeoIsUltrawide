@@ -1,10 +1,9 @@
 # Romeo Is a Dead Man – Ultrawide Semi Fix
 
-Ultrawide fix for *Romeo Is a Dead Man*.
+Ultrawide fix for *Romeo Is a Dead Man* ver 1.4.2 only!
 
 ## How it works?
-- On every engine tick apply, constraint adjustments to all UUserWidgets for UI fixes
-- General ultrawide support through SUWSF – Somewhat Universal Widescreen Fix
+- On every engine tick apply, constraint adjustments to all UUserWidgets and Cameras in the game
 
 ## How to compile (UI "fixes" only)
 - Dump the SDK using Dumper-7 and paste it into the project directory
