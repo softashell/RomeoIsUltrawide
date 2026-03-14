@@ -20,6 +20,8 @@ UClass* g_WidgetClass = nullptr;
 UClass* g_FadeClass = nullptr;
 UClass* g_CinemaScopeClass = nullptr;
 UClass* g_CinematicPauseMenuClass = nullptr;
+UClass* g_SimplePauseMenuClass = nullptr;
+UClass* g_PauseMenuOption2Class = nullptr;
 UClass* g_CameraClass = nullptr;
 
 typedef void (*FEngineTick)(UEngine*, float, bool);
@@ -37,7 +39,9 @@ static void ApplyFullWidthToFadeOrCinemaScope(UWidget* w, float negW)
 	if (!w) return;
 	bool isFullWidth = (g_FadeClass && w->IsA(g_FadeClass))
 		|| (g_CinemaScopeClass && w->IsA(g_CinemaScopeClass))
-		|| (g_CinematicPauseMenuClass && w->IsA(g_CinematicPauseMenuClass));
+		|| (g_CinematicPauseMenuClass && w->IsA(g_CinematicPauseMenuClass))
+		|| (g_SimplePauseMenuClass && w->IsA(g_SimplePauseMenuClass))
+		|| (g_PauseMenuOption2Class && w->IsA(g_PauseMenuOption2Class));
 	if (isFullWidth)
 	{
 		UCanvasPanelSlot* slot = UWidgetLayoutLibrary::SlotAsCanvasSlot(w);
@@ -142,11 +146,16 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 		if (Widget->IsInViewport())
 		{
 			if (Widget->WidgetTree && Widget->WidgetTree->RootWidget)
-				ApplyFullWidthToFadeOrCinemaScope(Widget->WidgetTree->RootWidget, -g_SlateW);
+			{
+				float halfLetterbox = (g_SlateW - g_ConstrainedW) * 0.5f;
+				ApplyFullWidthToFadeOrCinemaScope(Widget->WidgetTree->RootWidget, -halfLetterbox);
+			}
 
 			bool bFullWidth = (g_FadeClass && Widget->IsA(g_FadeClass))
 				|| (g_CinemaScopeClass && Widget->IsA(g_CinemaScopeClass))
-				|| (g_CinematicPauseMenuClass && Widget->IsA(g_CinematicPauseMenuClass));
+				|| (g_CinematicPauseMenuClass && Widget->IsA(g_CinematicPauseMenuClass))
+				|| (g_SimplePauseMenuClass && Widget->IsA(g_SimplePauseMenuClass))
+				|| (g_PauseMenuOption2Class && Widget->IsA(g_PauseMenuOption2Class));
 			if (!bFullWidth)
 			{
 				FVector2D targetSize = FVector2D{ g_ConstrainedW, g_ConstrainedH };
@@ -206,6 +215,8 @@ void MainThread()
 	g_FadeClass       = UWB_Fade_C::StaticClass();
 	g_CinemaScopeClass = UWB_CinemaScope_C::StaticClass();
 	g_CinematicPauseMenuClass = UWB_CinematicPauseMenu_C::StaticClass();
+	g_SimplePauseMenuClass   = UWB_SimplePauseMenu_C::StaticClass();
+	g_PauseMenuOption2Class  = UWB_PauseMenu_Option2_C::StaticClass();
 	g_CameraClass     = UCameraComponent::StaticClass();
 
 	if (!InstallHook())
