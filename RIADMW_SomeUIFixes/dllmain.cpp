@@ -16,7 +16,11 @@ std::atomic<bool> g_Ready{ false };
 HMODULE g_Module = nullptr;
 float g_ConstrainedW = 0;
 float g_ConstrainedH = 0;
+float g_SlateW = 0;
+float g_SlateH = 0;
 UClass* g_WidgetClass = nullptr;
+UClass* g_FadeClass = nullptr;
+UClass* g_CameraClass = nullptr;
 FILE* g_LogFile = nullptr;
 
 typedef void (*FEngineTick)(UEngine*, float, bool);
@@ -43,17 +47,17 @@ UWorld* GetWorld()
 
 void CalcConstrainedSize(FVector2D vp, float uiScale) 
 {
-	float slateW = vp.X / uiScale;
-	float slateH = vp.Y / uiScale;
-	float aspect = slateW / slateH;
+	g_SlateW = vp.X / uiScale;
+	g_SlateH = vp.Y / uiScale;
+	float aspect = g_SlateW / g_SlateH;
 
 	if (aspect > TARGET_ASPECT) 
 	{ 
-		g_ConstrainedH = slateH; g_ConstrainedW = slateH * TARGET_ASPECT; 
+		g_ConstrainedH = g_SlateH; g_ConstrainedW = g_SlateH * TARGET_ASPECT; 
 	}
 	else 
 	{ 
-		g_ConstrainedW = slateW; g_ConstrainedH = slateW / TARGET_ASPECT; 
+		g_ConstrainedW = g_SlateW; g_ConstrainedH = g_SlateW / TARGET_ASPECT; 
 	}
 }
 
@@ -64,29 +68,43 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 	if (!g_Ready) 
 		return;
 
+	bool bIsDimUniverse = false;
 	UWorld* World = GetWorld();
 	if (World) 
 	{
+		bIsDimUniverse = (World->GetName() == "OWL_DimensionalUniverse");
 		FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
 		if (vp.X > 0) 
 		{
 			float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
-			float slateW = vp.X / uiScale;
-			float slateH = vp.Y / uiScale;
-			float aspect = slateW / slateH;
-			float newW = (aspect > TARGET_ASPECT) ? slateH * TARGET_ASPECT : slateW;
-			float newH = (aspect > TARGET_ASPECT) ? slateH : slateW / TARGET_ASPECT;
-			if (newW != g_ConstrainedW || newH != g_ConstrainedH) {
-				g_ConstrainedW = newW;
-				g_ConstrainedH = newH;
-				Log("Viewport changed: %.0fx%.0f (scale %.2f) -> Constrained: %.0fx%.0f",
-					vp.X, vp.Y, uiScale, g_ConstrainedW, g_ConstrainedH);
-			}
+			CalcConstrainedSize(vp, uiScale);
 		}
 	}
 
 	TUObjectArray* Objects = UObject::GObjects.GetTypedPtr();
-	if (!Objects || !g_WidgetClass || g_ConstrainedW <= 0)
+	if (!Objects)
+		return;
+
+	if (g_CameraClass)
+	{
+		for (int32 i = 0; i < Objects->Num(); ++i)
+		{
+			UObject* Obj = Objects->GetByIndex(i);
+			if (!Obj || Obj->IsDefaultObject() || !Obj->IsA(g_CameraClass))
+				continue;
+
+			UCameraComponent* Cam = static_cast<UCameraComponent*>(Obj);
+
+			Cam->SetConstraintAspectRatio(bIsDimUniverse);
+
+			if (Cam->AspectRatioAxisConstraint != EAspectRatioAxisConstraint::AspectRatio_MaintainYFOV)
+			{
+				Cam->SetAspectRatioAxisConstraint(EAspectRatioAxisConstraint::AspectRatio_MaintainYFOV);
+			}
+		}
+	}
+
+	if (!g_WidgetClass || g_ConstrainedW <= 0)
 		return;
 
 	for (int32 i = 0; i < Objects->Num(); ++i) 
@@ -96,14 +114,19 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 			continue;
 
 		UUserWidget* Widget = static_cast<UUserWidget*>(Obj);
-		if (!Widget->IsInViewport()) 
-			continue;
 
-		Widget->SetDesiredSizeInViewport(FVector2D{ g_ConstrainedW, g_ConstrainedH });
-		Widget->SetAlignmentInViewport(FVector2D{ 0.5f, 0.5f });
-		FAnchors anchors;
-		anchors.Minimum = anchors.Maximum = FVector2D{ 0.5f, 0.5f };
-		Widget->SetAnchorsInViewport(anchors);
+		if (Widget->IsInViewport())
+		{
+			bool bIsFade = g_FadeClass && Widget->IsA(g_FadeClass);
+			FVector2D targetSize = bIsFade
+				? FVector2D{ g_SlateW, g_SlateH }
+				: FVector2D{ g_ConstrainedW, g_ConstrainedH };
+			Widget->SetDesiredSizeInViewport(targetSize);
+			Widget->SetAlignmentInViewport(FVector2D{ 0.5f, 0.5f });
+			FAnchors anchors;
+			anchors.Minimum = anchors.Maximum = FVector2D{ 0.5f, 0.5f };
+			Widget->SetAnchorsInViewport(anchors);
+		}
 	}
 }
 
@@ -159,7 +182,9 @@ void MainThread()
 		return;
 
 	Log("Constrained size: %.0fx%.0f", g_ConstrainedW, g_ConstrainedH);
-	g_WidgetClass = UUserWidget::StaticClass();
+	g_WidgetClass     = UUserWidget::StaticClass();
+	g_FadeClass       = UWB_Fade_C::StaticClass();
+	g_CameraClass     = UCameraComponent::StaticClass();
 
 	if (!InstallHook()) 
 		return; // uh uh, bad thing :(
