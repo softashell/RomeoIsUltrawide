@@ -38,9 +38,5 @@ Bugs are expected 🤷‍♂️
 | ![DamageNumbers-Before](https://weesp.in/i/ff78a032058b43dc.jpg) | ![DamageNumbers-After](https://weesp.in/i/847d1a0bcf97a879.jpg) |
 
 ## Credits
-This fix is based on **Lyall's UltrawidePatches** project.
-https://codeberg.org/Lyall/UltrawidePatches
 
-Base patch: Crime Boss: Rockay City
-
-Lyall, eu-tagami for releasing the initial version and me😝
+Thanks to Lyall and eu-tagami for releasing the initial version and bringing the idea to fix something — and to me 😝
