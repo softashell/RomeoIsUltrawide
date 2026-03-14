@@ -1,0 +1,3 @@
+[submodule "WUEFramework"]
+	path = WUEFramework
+	url = https://github.com/weespin/WUEFramework.git
