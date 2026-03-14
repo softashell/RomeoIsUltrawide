@@ -1,8 +1,6 @@
 #include "SDK.hpp"
 #include <thread>
 #include <atomic>
-#include <cstdio>
-#include <share.h>
 #include <MinHook.h>
 
 using namespace SDK;
@@ -20,29 +18,42 @@ float g_SlateW = 0;
 float g_SlateH = 0;
 UClass* g_WidgetClass = nullptr;
 UClass* g_FadeClass = nullptr;
+UClass* g_CinemaScopeClass = nullptr;
+UClass* g_CinematicPauseMenuClass = nullptr;
 UClass* g_CameraClass = nullptr;
-FILE* g_LogFile = nullptr;
 
 typedef void (*FEngineTick)(UEngine*, float, bool);
 FEngineTick g_OrigTick = nullptr;
 void* g_TickTarget = nullptr;
 
-void Log(const char* fmt, ...)
-{
-	if (!g_LogFile) return;
-	va_list args;
-	va_start(args, fmt);
-	fprintf(g_LogFile, "[RIADM_UI_Semi_Fix] ");
-	vfprintf(g_LogFile, fmt, args);
-	fprintf(g_LogFile, "\n");
-	fflush(g_LogFile);
-	va_end(args);
-}
-
 UWorld* GetWorld() 
 {
 	auto ptr = reinterpret_cast<UWorld**>(InSDKUtils::GetImageBase() + Offsets::GWorld);
 	return ptr ? *ptr : nullptr;
+}
+
+static void ApplyFullWidthToFadeOrCinemaScope(UWidget* w, float negW)
+{
+	if (!w) return;
+	bool isFullWidth = (g_FadeClass && w->IsA(g_FadeClass))
+		|| (g_CinemaScopeClass && w->IsA(g_CinemaScopeClass))
+		|| (g_CinematicPauseMenuClass && w->IsA(g_CinematicPauseMenuClass));
+	if (isFullWidth)
+	{
+		UCanvasPanelSlot* slot = UWidgetLayoutLibrary::SlotAsCanvasSlot(w);
+		if (slot)
+			slot->SetOffsets(FMargin(negW, 0.0f, negW, 0.0f));
+	}
+	if (w->IsA(UPanelWidget::StaticClass()))
+	{
+		UPanelWidget* panel = static_cast<UPanelWidget*>(w);
+		TArray<UWidget*> children = panel->GetAllChildren();
+		for (int32 c = 0; c < children.Num(); ++c)
+		{
+			if (UWidget* child = children[c])
+				ApplyFullWidthToFadeOrCinemaScope(child, negW);
+		}
+	}
 }
 
 void CalcConstrainedSize(FVector2D vp, float uiScale) 
@@ -70,9 +81,22 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 
 	bool bIsDimUniverse = false;
 	UWorld* World = GetWorld();
+	if (!World)
+		return;
 	if (World) 
 	{
-		bIsDimUniverse = (World->GetName() == "OWL_DimensionalUniverse");
+		APlayerController* pc = UGameplayStatics::GetPlayerController(World, 0);
+		if (pc)
+		{
+			APawn* pawn = pc->AcknowledgedPawn;
+			bIsDimUniverse = (pawn && pawn->IsA(APaperCharacter::StaticClass()));
+			if (!bIsDimUniverse && pc->IsA(ASevPlayerControllerCharacter::StaticClass()))
+			{
+				ASevPlayerControllerCharacter* pcChara = static_cast<ASevPlayerControllerCharacter*>(pc);
+				if (pcChara->mpPlayer2D)
+					bIsDimUniverse = true;
+			}
+		}
 		FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
 		if (vp.X > 0) 
 		{
@@ -117,15 +141,21 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 
 		if (Widget->IsInViewport())
 		{
-			bool bIsFade = g_FadeClass && Widget->IsA(g_FadeClass);
-			FVector2D targetSize = bIsFade
-				? FVector2D{ g_SlateW, g_SlateH }
-				: FVector2D{ g_ConstrainedW, g_ConstrainedH };
-			Widget->SetDesiredSizeInViewport(targetSize);
-			Widget->SetAlignmentInViewport(FVector2D{ 0.5f, 0.5f });
-			FAnchors anchors;
-			anchors.Minimum = anchors.Maximum = FVector2D{ 0.5f, 0.5f };
-			Widget->SetAnchorsInViewport(anchors);
+			if (Widget->WidgetTree && Widget->WidgetTree->RootWidget)
+				ApplyFullWidthToFadeOrCinemaScope(Widget->WidgetTree->RootWidget, -g_SlateW);
+
+			bool bFullWidth = (g_FadeClass && Widget->IsA(g_FadeClass))
+				|| (g_CinemaScopeClass && Widget->IsA(g_CinemaScopeClass))
+				|| (g_CinematicPauseMenuClass && Widget->IsA(g_CinematicPauseMenuClass));
+			if (!bFullWidth)
+			{
+				FVector2D targetSize = FVector2D{ g_ConstrainedW, g_ConstrainedH };
+				Widget->SetDesiredSizeInViewport(targetSize);
+				Widget->SetAlignmentInViewport(FVector2D{ 0.5f, 0.5f });
+				FAnchors anchors;
+				anchors.Minimum = anchors.Maximum = FVector2D{ 0.5f, 0.5f };
+				Widget->SetAnchorsInViewport(anchors);
+			}
 		}
 	}
 }
@@ -135,34 +165,25 @@ bool InstallHook()
 	uintptr_t base = InSDKUtils::GetImageBase();
 	UEngine* Engine = *reinterpret_cast<UEngine**>(base + GENGINE_PTR_RVA);
 
-	if (!Engine) 
-	{ 
-		Log("ERROR: GEngine is null"); return false;
-	}
+	if (!Engine)
+		return false;
 
 	void** vtable = *reinterpret_cast<void***>(Engine);
 	g_TickTarget = vtable[GENGINE_TICK_VTABLE];
-	Log("GEngine: 0x%p  vtable[%d]: 0x%p", Engine, GENGINE_TICK_VTABLE, g_TickTarget);
 
-	if (MH_Initialize() != MH_OK) 
-	{
-		Log("ERROR: MH_Initialize failed"); return false; 
-	}
+	if (MH_Initialize() != MH_OK)
+		return false;
 
-	if (MH_CreateHook(g_TickTarget, &HookedEngineTick, reinterpret_cast<void**>(&g_OrigTick)) != MH_OK || MH_EnableHook(g_TickTarget) != MH_OK) 
+	if (MH_CreateHook(g_TickTarget, &HookedEngineTick, reinterpret_cast<void**>(&g_OrigTick)) != MH_OK || MH_EnableHook(g_TickTarget) != MH_OK)
 	{
-		Log("ERROR: Hook creation failed");
 		MH_Uninitialize();
 		return false;
 	}
-
-	Log("Hook installed (trampoline: 0x%p)", g_OrigTick);
 	return true;
 }
 
 void MainThread() 
 {
-	// waiting for accessible to spin up
 	while (g_Running) 
 	{
 		UWorld* World = GetWorld();
@@ -181,32 +202,22 @@ void MainThread()
 	if (!g_Running) 
 		return;
 
-	Log("Constrained size: %.0fx%.0f", g_ConstrainedW, g_ConstrainedH);
 	g_WidgetClass     = UUserWidget::StaticClass();
 	g_FadeClass       = UWB_Fade_C::StaticClass();
+	g_CinemaScopeClass = UWB_CinemaScope_C::StaticClass();
+	g_CinematicPauseMenuClass = UWB_CinematicPauseMenu_C::StaticClass();
 	g_CameraClass     = UCameraComponent::StaticClass();
 
-	if (!InstallHook()) 
-		return; // uh uh, bad thing :(
+	if (!InstallHook())
+		return;
 
 	g_Ready = true;
-	
-	Log("Running.");
-	
 	while (g_Running)
-	{
 		Sleep(1000);
-	}
-
 	g_Ready = false;
-	
+
 	MH_DisableHook(g_TickTarget);
 	MH_Uninitialize();
-	
-	Log("Unloaded.");
-
-	fclose(g_LogFile);
-	g_LogFile = nullptr;
 
 	FreeLibraryAndExitThread(g_Module, 0);
 }
@@ -215,14 +226,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
 	if (reason == DLL_PROCESS_ATTACH) {
 		g_Module = hModule;
 		DisableThreadLibraryCalls(hModule);
-
-		char logPath[MAX_PATH];
-		GetModuleFileNameA(hModule, logPath, MAX_PATH);
-
-		char* slash = strrchr(logPath, '\\');
-		if (slash) strcpy_s(slash + 1, MAX_PATH - (slash - logPath) - 1, "sevwidefixes.log");
-		g_LogFile = _fsopen(logPath, "w", _SH_DENYWR);
-
 		std::thread(MainThread).detach();
 	}
 	return TRUE;
