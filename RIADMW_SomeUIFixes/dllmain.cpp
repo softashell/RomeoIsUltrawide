@@ -53,32 +53,32 @@ static void ApplyFullWidthToFadeOrCinemaScope(UWidget* w, float negW)
 	}
 }
 
-void CalcConstrainedSize(FVector2D vp, float uiScale) 
+void CalcConstrainedSize(FVector2D vp, float uiScale)
 {
 	g_SlateW = vp.X / uiScale;
 	g_SlateH = vp.Y / uiScale;
 	float aspect = g_SlateW / g_SlateH;
 
-	if (aspect > TARGET_ASPECT) 
-	{ 
-		g_ConstrainedH = g_SlateH; g_ConstrainedW = g_SlateH * TARGET_ASPECT; 
+	if (aspect > TARGET_ASPECT)
+	{
+		g_ConstrainedH = g_SlateH; g_ConstrainedW = g_SlateH * TARGET_ASPECT;
 	}
-	else 
-	{ 
-		g_ConstrainedW = g_SlateW; g_ConstrainedH = g_SlateW / TARGET_ASPECT; 
+	else
+	{
+		g_ConstrainedW = g_SlateW; g_ConstrainedH = g_SlateW / TARGET_ASPECT;
 	}
 }
 
 void DoWork()
 {
-	if (!g_Ready) 
+	if (!g_Ready)
 		return;
 
 	bool bIsDimUniverse = false;
 	UWorld* World = UWorld::GetWorld();
 	if (!World)
 		return;
-	if (World) 
+	if (World)
 	{
 		APlayerController* pc = UGameplayStatics::GetPlayerController(World, 0);
 		if (pc)
@@ -93,7 +93,7 @@ void DoWork()
 			}
 		}
 		FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
-		if (vp.X > 0) 
+		if (vp.X > 0)
 		{
 			float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
 			CalcConstrainedSize(vp, uiScale);
@@ -126,10 +126,10 @@ void DoWork()
 	if (!g_WidgetClass || g_ConstrainedW <= 0)
 		return;
 
-	for (int32 i = 0; i < Objects->Num(); ++i) 
+	for (int32 i = 0; i < Objects->Num(); ++i)
 	{
 		UObject* Obj = Objects->GetByIndex(i);
-		if (!Obj || Obj->IsDefaultObject() || !Obj->IsA(g_WidgetClass)) 
+		if (!Obj || Obj->IsDefaultObject() || !Obj->IsA(g_WidgetClass))
 			continue;
 
 		UUserWidget* Widget = static_cast<UUserWidget*>(Obj);
@@ -179,7 +179,7 @@ void HookedProcessEvent(UObject* Object, UFunction* Function, void* Parms)
 	}
 }
 
-bool InstallHook() 
+bool InstallHook()
 {
 	uintptr_t base = InSDKUtils::GetImageBase();
 
@@ -196,24 +196,24 @@ bool InstallHook()
 	return true;
 }
 
-void MainThread() 
+void MainThread()
 {
-	while (g_Running) 
+	while (g_Running)
 	{
 		UWorld* World = UWorld::GetWorld();
 		if (World) // World* should be enabled by this time but anyways
 		{
 			FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
 			if (vp.X > 0)
-			{ 
+			{
 				float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
-				CalcConstrainedSize(vp, uiScale); 
-				break; 
+				CalcConstrainedSize(vp, uiScale);
+				break;
 			}
 		}
 		Sleep(500);
 	}
-	if (!g_Running) 
+	if (!g_Running)
 		return;
 
 	g_WidgetClass     = UUserWidget::StaticClass();
