@@ -34,7 +34,7 @@ sdk_sources = run_command(
   'meson-get-sdk-sources', meson.project_source_root() / 'RIADMW_SomeUIFixes' / 'SDK',
   check: true).stdout().strip().split('\n')
 
-shared_module('RIADMW_SomeUIFixes',
+shared_module('RomeoIsUltrawide',
   ['RIADMW_SomeUIFixes/dllmain.cpp'] + sdk_sources,
   include_directories: include_directories('RIADMW_SomeUIFixes', 'RIADMW_SomeUIFixes/include'),
   link_args: ['-Wl,--subsystem,windows', '-static'],
@@ -61,7 +61,7 @@ foreach m : minimal_mods
   endif
 endforeach
 
-shared_module('RIADMW_SomeUIFixes_minimal',
+shared_module('RomeoIsUltrawide_minimal',
   ['RIADMW_SomeUIFixes/dllmain.cpp'] + minimal_sources,
   include_directories: include_directories('RIADMW_SomeUIFixes', 'RIADMW_SomeUIFixes/include'),
   link_args: ['-Wl,--subsystem,windows', '-static'],
