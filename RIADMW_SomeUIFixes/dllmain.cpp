@@ -22,18 +22,13 @@ constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new
 // Overridable via RomeoIsUltrawide.ini next to the .asi:  [fov] boost=1.5
 static float g_FovBoost = 1.0f;
 
-// FOV boost state. The boost is derived ONLY from the tracked authored base
-// (g_Base), never from the current value — the game feeds our boosted value
-// back through camera cross-links (save points), so boosting "cur" compounds
-// into fisheye. Any readback matching a value we previously wrote is our own
-// echo (same camera, or a cross-linked one) and is never re-adopted as
-// authored input.
+// FOV boost state, per camera. The boost is derived ONLY from the tracked
+// authored base, never from the current value — the game feeds our boosted
+// value back through camera cross-links (save points), so boosting "cur"
+// compounds into fisheye. Any readback matching a value we previously wrote
+// to THIS camera is our own echo and is never re-adopted as authored input.
 constexpr int FOV_WRITE_HISTORY = 8;
 constexpr float FOV_EPS = 0.01f; // float slack: ULP noise + blend jitter
-static float g_Base = 0.f;        // current authored FOV (75 normal, 45 ADS)
-static float g_LastWritten = 0.f; // last value we stored into FieldOfView
-static float g_WriteHistory[FOV_WRITE_HISTORY] = {}; // recent stores, to spot cross-linked echoes
-static int g_WriteHistoryIdx = 0;
 
 std::atomic<bool> g_Running{ true };
 std::atomic<bool> g_Ready{ false };
@@ -76,7 +71,7 @@ static void LoadFovConfig()
 	lstrcpyW(slash + 1, L"RomeoIsUltrawide.ini");
 
 	wchar_t buf[64] = {};
-	GetPrivateProfileStringW(L"fov", L"boost", L"1.5", buf, 64, iniPath);
+	GetPrivateProfileStringW(L"fov", L"boost", L"1.0", buf, 64, iniPath);
 	wchar_t* end = nullptr;
 	const float v = std::wcstof(buf, &end);
 	if (end != buf && v >= 1.0f && v <= 4.0f)
@@ -131,12 +126,15 @@ static const int FOV_CAM_MAX = 16;
 static UCameraComponent* g_FovCamPtr[FOV_CAM_MAX] = {};
 static float g_FovCamBase[FOV_CAM_MAX] = {};
 static uint64_t g_FovCamSeen[FOV_CAM_MAX] = {};
+static float g_FovCamLastWritten[FOV_CAM_MAX] = {};    // per-camera last store
+static float g_FovCamHistory[FOV_CAM_MAX][FOV_WRITE_HISTORY] = {}; // per-camera echo ring
+static int g_FovCamHistIdx[FOV_CAM_MAX] = {};
 
-static float* FovCamBaseSlot(UCameraComponent* cam)
+static int FovCamSlot(UCameraComponent* cam)
 {
 	for (int i = 0; i < FOV_CAM_MAX; ++i)
 		if (g_FovCamPtr[i] == cam)
-			return &g_FovCamBase[i];
+			return i;
 	// free slot, else evict the stalest (not seen for the longest)
 	int slot = -1;
 	for (int i = 0; i < FOV_CAM_MAX; ++i)
@@ -151,7 +149,11 @@ static float* FovCamBaseSlot(UCameraComponent* cam)
 	g_FovCamPtr[slot] = cam;
 	g_FovCamBase[slot] = 0.f;
 	g_FovCamSeen[slot] = 0;
-	return &g_FovCamBase[slot];
+	g_FovCamLastWritten[slot] = 0.f;
+	g_FovCamHistIdx[slot] = 0;
+	for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
+		g_FovCamHistory[slot][h] = 0.f;
+	return slot;
 }
 
 static void CollectCameras(AActor* actor, UCameraComponent** out, int& n, int cap)
@@ -223,9 +225,11 @@ void DoWork()
 
 	// FOV boost: direct member write to the view camera's FieldOfView. Only
 	// once the pawn is acknowledged, so menu/cutscene cameras never seed the
-	// base. Any readback that is neither our last write nor a recent store
-	// (g_WriteHistory) is game-authored: adopt it as the new base (ADS, zooms,
-	// cutscene punch-ins) so the boost follows the game instead of fighting it.
+	// base. Any readback that is neither a value we previously wrote to THIS
+	// camera (last write or its echo ring) is game-authored: adopt it as the
+	// new base (ADS, zooms, cutscene punch-ins) so the boost follows the game
+	// instead of fighting it.
+	static bool s_WasDimUniverse = false;
 	if (!bIsDimUniverse)
 	{
 		UCameraComponent* cams[FOV_CAM_MAX] = {};
@@ -236,9 +240,6 @@ void DoWork()
 			CollectCameras(pc->AcknowledgedPawn, cams, nCams, FOV_CAM_MAX);
 			CollectCameras(pc, cams, nCams, FOV_CAM_MAX);
 		}
-
-		static int s_LastNCams = -1;
-		s_LastNCams = nCams;
 
 		uint64_t now = GetTickCount64();
 		for (int i = 0; i < nCams; ++i)
@@ -254,20 +255,21 @@ void DoWork()
 			const float cur = cam->FieldOfView;
 			if (cur <= 0.f)
 				continue;
-			float* pBase = FovCamBaseSlot(cam);
-			for (int s = 0; s < FOV_CAM_MAX; ++s)
-				if (g_FovCamPtr[s] == cam) { g_FovCamSeen[s] = now; break; }
+			const int slot = FovCamSlot(cam);
+			g_FovCamSeen[slot] = now;
+			float& base = g_FovCamBase[slot];
 
-			if (*pBase == 0.f)
-				*pBase = cur; // first sight of this camera
+			if (base == 0.f)
+				base = cur; // first sight of this camera
 
-			bool isOurs = std::fabs(cur - g_LastWritten) < FOV_EPS
-				|| std::fabs(cur - BoostFOV(*pBase)) < FOV_EPS;
+			bool isOurs = std::fabs(cur - g_FovCamLastWritten[slot]) < FOV_EPS
+				|| std::fabs(cur - BoostFOV(base)) < FOV_EPS;
 			if (!isOurs)
 			{
 				for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
 				{
-					if (g_WriteHistory[h] != 0.f && std::fabs(cur - g_WriteHistory[h]) < FOV_EPS)
+					if (g_FovCamHistory[slot][h] != 0.f
+						&& std::fabs(cur - g_FovCamHistory[slot][h]) < FOV_EPS)
 					{
 						isOurs = true;
 						break;
@@ -276,18 +278,40 @@ void DoWork()
 			}
 
 			if (!isOurs)
-				*pBase = cur; // game authored a new FOV: adopt, then re-boost
+			{
+				base = cur; // game authored a new FOV: adopt, then re-boost
+				// clear the echo ring: old stores belong to the old base and
+				// would otherwise mask a genuine re-authoring of this value
+				for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
+					g_FovCamHistory[slot][h] = 0.f;
+				g_FovCamHistIdx[slot] = 0;
+				g_FovCamLastWritten[slot] = 0.f;
+			}
 
-			const float target = BoostFOV(*pBase);
+			const float target = BoostFOV(base);
 			if (std::fabs(cur - target) > FOV_EPS)
 			{
 				cam->FieldOfView = target; // DIRECT store (plain member)
-				g_LastWritten = target;
-				g_WriteHistory[g_WriteHistoryIdx] = target;
-				g_WriteHistoryIdx = (g_WriteHistoryIdx + 1) % FOV_WRITE_HISTORY;
+				g_FovCamLastWritten[slot] = target;
+				g_FovCamHistory[slot][g_FovCamHistIdx[slot]] = target;
+				g_FovCamHistIdx[slot] = (g_FovCamHistIdx[slot] + 1) % FOV_WRITE_HISTORY;
 			}
 		}
 	}
+	else if (s_WasDimUniverse != bIsDimUniverse)
+	{
+		// entering 2D: the game never rewrites FieldOfView itself, so restore
+		// the authored base on every camera we boosted — once, on transition
+		for (int s = 0; s < FOV_CAM_MAX; ++s)
+		{
+			if (g_FovCamPtr[s] && g_FovCamBase[s] > 0.f
+				&& g_FovCamLastWritten[s] > 0.f)
+			{
+				g_FovCamPtr[s]->FieldOfView = g_FovCamBase[s];
+			}
+		}
+	}
+	s_WasDimUniverse = bIsDimUniverse;
 
 	if (!g_WidgetClass || g_ConstrainedW <= 0)
 		return;
