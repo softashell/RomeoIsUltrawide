@@ -1,12 +1,39 @@
 #include "SDK.hpp"
 #include <thread>
+#include <cmath>
+#include <numbers>
 #include <atomic>
+#include <cwchar>
 #include <MinHook.h>
 
 using namespace SDK;
 
 constexpr float TARGET_ASPECT = 16.0f / 9.0f;
 constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new build)
+
+// FOV boost. Every reflected FOV function is dead on this build (verified:
+// GetFOVAngle, SetFieldOfView, the game's ASevCameraAnimActor::GetFieldOfView,
+// CineCamera getters, etc. all see 0 calls). The game writes
+// UCameraComponent::FieldOfView (a plain public float member at offset 0x240)
+// directly and does NOT rewrite it during gameplay. So write that member
+// directly — a plain memory store, unlike the SDK SetFieldOfView() method
+// which goes through a broken reflected dispatch (2x doubling, no-op).
+// Multiplier on tan(FOV/2): 1.0 = off, ~1.05 subtle, ~1.12 noticeable, 1.2+ strong.
+// Overridable via fov.ini next to the .asi:  [fov] boost=1.5
+static float g_FovBoost = 1.5f;
+
+// FOV boost state. The boost is derived ONLY from the tracked authored base
+// (g_Base), never from the current value — the game feeds our boosted value
+// back through camera cross-links (save points), so boosting "cur" compounds
+// into fisheye. Any readback matching a value we previously wrote is our own
+// echo (same camera, or a cross-linked one) and is never re-adopted as
+// authored input.
+constexpr int FOV_WRITE_HISTORY = 8;
+constexpr float FOV_EPS = 0.01f; // float slack: ULP noise + blend jitter
+static float g_Base = 0.f;        // current authored FOV (75 normal, 45 ADS)
+static float g_LastWritten = 0.f; // last value we stored into FieldOfView
+static float g_WriteHistory[FOV_WRITE_HISTORY] = {}; // recent stores, to spot cross-linked echoes
+static int g_WriteHistoryIdx = 0;
 
 std::atomic<bool> g_Running{ true };
 std::atomic<bool> g_Ready{ false };
@@ -26,6 +53,35 @@ UFunction* g_TickFunc = nullptr;
 
 typedef void (*UProcessEvent)(UObject*, UFunction*, void*);
 UProcessEvent g_OrigProcessEvent = nullptr;
+
+static float BoostFOV(float fovDeg)
+{
+	if (fovDeg <= 0.f || fovDeg >= 180.f)
+		return fovDeg;
+	const float halfTan = std::tan(fovDeg * std::numbers::pi_v<float> / 360.f) * g_FovBoost;
+	return 2.f * std::atan(halfTan) * (180.f / std::numbers::pi_v<float>);
+}
+
+// Optional user config: fov.ini next to the .asi.
+//	[fov]
+//	boost=1.5
+static void LoadFovConfig()
+{
+	wchar_t iniPath[MAX_PATH] = {};
+	if (GetModuleFileNameW(g_Module, iniPath, MAX_PATH) == 0)
+		return;
+	wchar_t* slash = std::wcsrchr(iniPath, L'\\');
+	if (!slash)
+		return;
+	lstrcpyW(slash + 1, L"fov.ini");
+
+	wchar_t buf[64] = {};
+	GetPrivateProfileStringW(L"fov", L"boost", L"1.5", buf, 64, iniPath);
+	wchar_t* end = nullptr;
+	const float v = std::wcstof(buf, &end);
+	if (end != buf && v >= 1.0f && v <= 4.0f)
+		g_FovBoost = v;
+}
 
 static void ApplyFullWidthToFadeOrCinemaScope(UWidget* w, float negW)
 {
@@ -69,35 +125,49 @@ void CalcConstrainedSize(FVector2D vp, float uiScale)
 	}
 }
 
+// The view target's camera component — the one that actually renders.
+// GetViewTarget + GetComponentByClass are reflected calls; both verified
+// working on this build (the boost is visible in-game), unlike the SDK's
+// FOV *setter* dispatch.
+static UCameraComponent* GetViewTargetCamera(APlayerController* pc)
+{
+	if (!pc)
+		return nullptr;
+	AActor* vt = pc->GetViewTarget();
+	if (!vt)
+		return nullptr;
+	return static_cast<UCameraComponent*>(vt->GetComponentByClass(UCameraComponent::StaticClass()));
+}
+
 void DoWork()
 {
 	if (!g_Ready)
 		return;
 
 	bool bIsDimUniverse = false;
+	APlayerController* pc = nullptr;
 	UWorld* World = UWorld::GetWorld();
 	if (!World)
 		return;
-	if (World)
+
+	pc = UGameplayStatics::GetPlayerController(World, 0);
+	if (pc)
 	{
-		APlayerController* pc = UGameplayStatics::GetPlayerController(World, 0);
-		if (pc)
+		APawn* pawn = pc->AcknowledgedPawn;
+		bIsDimUniverse = (pawn && pawn->IsA(APaperCharacter::StaticClass()));
+		if (!bIsDimUniverse && pc->IsA(ASevPlayerControllerCharacter::StaticClass()))
 		{
-			APawn* pawn = pc->AcknowledgedPawn;
-			bIsDimUniverse = (pawn && pawn->IsA(APaperCharacter::StaticClass()));
-			if (!bIsDimUniverse && pc->IsA(ASevPlayerControllerCharacter::StaticClass()))
-			{
-				ASevPlayerControllerCharacter* pcChara = static_cast<ASevPlayerControllerCharacter*>(pc);
-				if (pcChara->mpPlayer2D)
-					bIsDimUniverse = true;
-			}
+			ASevPlayerControllerCharacter* pcChara = static_cast<ASevPlayerControllerCharacter*>(pc);
+			if (pcChara->mpPlayer2D)
+				bIsDimUniverse = true;
 		}
-		FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
-		if (vp.X > 0)
-		{
-			float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
-			CalcConstrainedSize(vp, uiScale);
-		}
+	}
+
+	FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
+	if (vp.X > 0)
+	{
+		float uiScale = UWidgetLayoutLibrary::GetViewportScale(World);
+		CalcConstrainedSize(vp, uiScale);
 	}
 
 	TUObjectArray* Objects = UObject::GObjects.GetTypedPtr();
@@ -119,6 +189,51 @@ void DoWork()
 			if (Cam->AspectRatioAxisConstraint != EAspectRatioAxisConstraint::AspectRatio_MaintainYFOV)
 			{
 				Cam->SetAspectRatioAxisConstraint(EAspectRatioAxisConstraint::AspectRatio_MaintainYFOV);
+			}
+		}
+	}
+
+	// FOV boost: direct member write to the view camera's FieldOfView. Only
+	// once the pawn is acknowledged, so menu/cutscene cameras never seed the
+	// base. Any readback that is neither our last write nor a recent store
+	// (g_WriteHistory) is game-authored: adopt it as the new base (ADS, zooms,
+	// cutscene punch-ins) so the boost follows the game instead of fighting it.
+	if (!bIsDimUniverse)
+	{
+		UCameraComponent* vcam = GetViewTargetCamera(pc);
+		if (vcam && pc && pc->AcknowledgedPawn)
+		{
+			const float cur = vcam->FieldOfView;
+			if (cur > 0.f)
+			{
+				if (g_Base == 0.f)
+					g_Base = cur; // first gameplay-authored FOV (75)
+
+				bool isOurs = std::fabs(cur - g_LastWritten) < FOV_EPS
+					|| std::fabs(cur - BoostFOV(g_Base)) < FOV_EPS;
+				if (!isOurs)
+				{
+					for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
+					{
+						if (g_WriteHistory[h] != 0.f && std::fabs(cur - g_WriteHistory[h]) < FOV_EPS)
+						{
+							isOurs = true;
+							break;
+						}
+					}
+				}
+
+				if (!isOurs)
+					g_Base = cur; // game authored a new FOV: adopt, then re-boost
+
+				const float target = BoostFOV(g_Base);
+				if (std::fabs(cur - target) > FOV_EPS)
+				{
+					vcam->FieldOfView = target; // DIRECT store (plain member)
+					g_LastWritten = target;
+					g_WriteHistory[g_WriteHistoryIdx] = target;
+					g_WriteHistoryIdx = (g_WriteHistoryIdx + 1) % FOV_WRITE_HISTORY;
+				}
 			}
 		}
 	}
@@ -186,18 +301,26 @@ bool InstallHook()
 	if (MH_Initialize() != MH_OK)
 		return false;
 
-	void* Target = reinterpret_cast<void*>(base + PROCESSEVENT_RVA);
-
-	if (MH_CreateHook(Target, reinterpret_cast<void*>(&HookedProcessEvent), reinterpret_cast<void**>(&g_OrigProcessEvent)) != MH_OK || MH_EnableHook(Target) != MH_OK)
+	void* peTarget = reinterpret_cast<void*>(base + PROCESSEVENT_RVA);
+	if (MH_CreateHook(peTarget, reinterpret_cast<void*>(&HookedProcessEvent), reinterpret_cast<void**>(&g_OrigProcessEvent)) != MH_OK)
 	{
 		MH_Uninitialize();
 		return false;
 	}
+
+	if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK)
+	{
+		MH_Uninitialize();
+		return false;
+	}
+
 	return true;
 }
 
 void MainThread()
 {
+	LoadFovConfig();
+
 	while (g_Running)
 	{
 		UWorld* World = UWorld::GetWorld();
