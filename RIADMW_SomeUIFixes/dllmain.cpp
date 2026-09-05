@@ -19,7 +19,7 @@ constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new
 // directly — a plain memory store, unlike the SDK SetFieldOfView() method
 // which goes through a broken reflected dispatch (2x doubling, no-op).
 // Multiplier on tan(FOV/2): 1.0 = off, ~1.05 subtle, ~1.12 noticeable, 1.2+ strong.
-// Overridable via fov.ini next to the .asi:  [fov] boost=1.5
+// Overridable via RomeoIsUltrawide.ini next to the .asi:  [fov] boost=1.5
 static float g_FovBoost = 1.5f;
 
 // FOV boost state. The boost is derived ONLY from the tracked authored base
@@ -62,7 +62,7 @@ static float BoostFOV(float fovDeg)
 	return 2.f * std::atan(halfTan) * (180.f / std::numbers::pi_v<float>);
 }
 
-// Optional user config: fov.ini next to the .asi.
+// Optional user config: RomeoIsUltrawide.ini next to the .asi.
 //	[fov]
 //	boost=1.5
 static void LoadFovConfig()
@@ -73,7 +73,7 @@ static void LoadFovConfig()
 	wchar_t* slash = std::wcsrchr(iniPath, L'\\');
 	if (!slash)
 		return;
-	lstrcpyW(slash + 1, L"fov.ini");
+	lstrcpyW(slash + 1, L"RomeoIsUltrawide.ini");
 
 	wchar_t buf[64] = {};
 	GetPrivateProfileStringW(L"fov", L"boost", L"1.5", buf, 64, iniPath);
