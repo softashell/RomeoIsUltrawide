@@ -20,7 +20,7 @@ constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new
 // which goes through a broken reflected dispatch (2x doubling, no-op).
 // Multiplier on tan(FOV/2): 1.0 = off, ~1.05 subtle, ~1.12 noticeable, 1.2+ strong.
 // Overridable via RomeoIsUltrawide.ini next to the .asi:  [fov] boost=1.5
-static float g_FovBoost = 1.2f;
+static float g_FovBoost = 1.0f;
 
 // FOV boost state. The boost is derived ONLY from the tracked authored base
 // (g_Base), never from the current value — the game feeds our boosted value
@@ -125,18 +125,46 @@ void CalcConstrainedSize(FVector2D vp, float uiScale)
 	}
 }
 
-// The view target's camera component — the one that actually renders.
-// GetViewTarget + GetComponentByClass are reflected calls; both verified
-// working on this build (the boost is visible in-game), unlike the SDK's
-// FOV *setter* dispatch.
-static UCameraComponent* GetViewTargetCamera(APlayerController* pc)
+// The view target's camera components — ALL of them, not just the first.
+// GetComponentByClass returns an arbitrary first camera
+static const int FOV_CAM_MAX = 16;
+static UCameraComponent* g_FovCamPtr[FOV_CAM_MAX] = {};
+static float g_FovCamBase[FOV_CAM_MAX] = {};
+static uint64_t g_FovCamSeen[FOV_CAM_MAX] = {};
+
+static float* FovCamBaseSlot(UCameraComponent* cam)
 {
-	if (!pc)
-		return nullptr;
-	AActor* vt = pc->GetViewTarget();
-	if (!vt)
-		return nullptr;
-	return static_cast<UCameraComponent*>(vt->GetComponentByClass(UCameraComponent::StaticClass()));
+	for (int i = 0; i < FOV_CAM_MAX; ++i)
+		if (g_FovCamPtr[i] == cam)
+			return &g_FovCamBase[i];
+	// free slot, else evict the stalest (not seen for the longest)
+	int slot = -1;
+	for (int i = 0; i < FOV_CAM_MAX; ++i)
+		if (!g_FovCamPtr[i]) { slot = i; break; }
+	if (slot < 0)
+	{
+		slot = 0;
+		for (int i = 1; i < FOV_CAM_MAX; ++i)
+			if (g_FovCamSeen[i] < g_FovCamSeen[slot])
+				slot = i;
+	}
+	g_FovCamPtr[slot] = cam;
+	g_FovCamBase[slot] = 0.f;
+	g_FovCamSeen[slot] = 0;
+	return &g_FovCamBase[slot];
+}
+
+static void CollectCameras(AActor* actor, UCameraComponent** out, int& n, int cap)
+{
+	if (!actor || n >= cap)
+		return;
+	TArray<UActorComponent*> comps = actor->K2_GetComponentsByClass(UCameraComponent::StaticClass());
+	for (int32 c = 0; c < comps.Num() && n < cap; ++c)
+	{
+		UActorComponent* comp = comps[c];
+		if (comp && comp->IsA(UCameraComponent::StaticClass()))
+			out[n++] = static_cast<UCameraComponent*>(comp);
+	}
 }
 
 void DoWork()
@@ -200,40 +228,63 @@ void DoWork()
 	// cutscene punch-ins) so the boost follows the game instead of fighting it.
 	if (!bIsDimUniverse)
 	{
-		UCameraComponent* vcam = GetViewTargetCamera(pc);
-		if (vcam && pc && pc->AcknowledgedPawn)
+		UCameraComponent* cams[FOV_CAM_MAX] = {};
+		int nCams = 0;
+		if (pc)
 		{
-			const float cur = vcam->FieldOfView;
-			if (cur > 0.f)
-			{
-				if (g_Base == 0.f)
-					g_Base = cur; // first gameplay-authored FOV (75)
+			CollectCameras(pc->GetViewTarget(), cams, nCams, FOV_CAM_MAX);
+			CollectCameras(pc->AcknowledgedPawn, cams, nCams, FOV_CAM_MAX);
+			CollectCameras(pc, cams, nCams, FOV_CAM_MAX);
+		}
 
-				bool isOurs = std::fabs(cur - g_LastWritten) < FOV_EPS
-					|| std::fabs(cur - BoostFOV(g_Base)) < FOV_EPS;
-				if (!isOurs)
+		static int s_LastNCams = -1;
+		s_LastNCams = nCams;
+
+		uint64_t now = GetTickCount64();
+		for (int i = 0; i < nCams; ++i)
+		{
+			UCameraComponent* cam = cams[i];
+			// dedup (same actor collected twice via different paths)
+			bool dup = false;
+			for (int j = 0; j < i; ++j)
+				if (cams[j] == cam) { dup = true; break; }
+			if (dup)
+				continue;
+
+			const float cur = cam->FieldOfView;
+			if (cur <= 0.f)
+				continue;
+			float* pBase = FovCamBaseSlot(cam);
+			for (int s = 0; s < FOV_CAM_MAX; ++s)
+				if (g_FovCamPtr[s] == cam) { g_FovCamSeen[s] = now; break; }
+
+			if (*pBase == 0.f)
+				*pBase = cur; // first sight of this camera
+
+			bool isOurs = std::fabs(cur - g_LastWritten) < FOV_EPS
+				|| std::fabs(cur - BoostFOV(*pBase)) < FOV_EPS;
+			if (!isOurs)
+			{
+				for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
 				{
-					for (int h = 0; h < FOV_WRITE_HISTORY; ++h)
+					if (g_WriteHistory[h] != 0.f && std::fabs(cur - g_WriteHistory[h]) < FOV_EPS)
 					{
-						if (g_WriteHistory[h] != 0.f && std::fabs(cur - g_WriteHistory[h]) < FOV_EPS)
-						{
-							isOurs = true;
-							break;
-						}
+						isOurs = true;
+						break;
 					}
 				}
+			}
 
-				if (!isOurs)
-					g_Base = cur; // game authored a new FOV: adopt, then re-boost
+			if (!isOurs)
+				*pBase = cur; // game authored a new FOV: adopt, then re-boost
 
-				const float target = BoostFOV(g_Base);
-				if (std::fabs(cur - target) > FOV_EPS)
-				{
-					vcam->FieldOfView = target; // DIRECT store (plain member)
-					g_LastWritten = target;
-					g_WriteHistory[g_WriteHistoryIdx] = target;
-					g_WriteHistoryIdx = (g_WriteHistoryIdx + 1) % FOV_WRITE_HISTORY;
-				}
+			const float target = BoostFOV(*pBase);
+			if (std::fabs(cur - target) > FOV_EPS)
+			{
+				cam->FieldOfView = target; // DIRECT store (plain member)
+				g_LastWritten = target;
+				g_WriteHistory[g_WriteHistoryIdx] = target;
+				g_WriteHistoryIdx = (g_WriteHistoryIdx + 1) % FOV_WRITE_HISTORY;
 			}
 		}
 	}
