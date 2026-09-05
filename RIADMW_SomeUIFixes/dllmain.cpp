@@ -20,7 +20,7 @@ constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new
 // which goes through a broken reflected dispatch (2x doubling, no-op).
 // Multiplier on tan(FOV/2): 1.0 = off, ~1.05 subtle, ~1.12 noticeable, 1.2+ strong.
 // Overridable via RomeoIsUltrawide.ini next to the .asi:  [fov] boost=1.5
-static float g_FovBoost = 1.5f;
+static float g_FovBoost = 1.2f;
 
 // FOV boost state. The boost is derived ONLY from the tracked authored base
 // (g_Base), never from the current value — the game feeds our boosted value
