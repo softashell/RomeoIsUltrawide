@@ -1,15 +1,15 @@
 # Romeo Is a Dead Man – Ultrawide Semi Fix
 
-Ultrawide fix for *Romeo Is a Dead Man* ver 1.4.2 only!
+Ultrawide fix for *Romeo Is a Dead Man* — 1.5.0 (buildid 24347907, UE 5.6.1 SDK dump).
 
 ## How it works?
-- On every engine tick apply, constraint adjustments to all UUserWidgets and Cameras in the game
+- Hooks `ProcessEvent` by RVA and applies constraint adjustments to all UUserWidgets and Cameras from the reflected `UserWidget::Tick`
 
 ## How to compile (UI "fixes" only)
 - Dump the SDK using Dumper-7 and paste it into the project directory
 - Throw a MinHook libMinHook.x64.lib file into "RIADMW_SomeUIFixes\lib"
 - Open .slnx file using Visual Studio (downgrade the vcxproj or use preview version of VS)
-- Build!
+- Build! (Alternatively on Linux: `tools/build_mod.sh` cross-builds with llvm-mingw; `RIADMW_SomeUIFixes/lib/build_minhook.sh` builds MinHook)
 - Rename the DLL to anything you want with the .asi extension
 - Place the .asi file next to the game executable (also make, sure you have a loader like winmm.dll present in the Binaries folder)
 - Done (if it doesn't compile with static_assert errors, make sure you're compiling x64 version, if the error is a single one - just comment the problematic line, lol)

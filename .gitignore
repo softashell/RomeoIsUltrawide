@@ -439,3 +439,11 @@ RIADMW_SomeUIFixes/SDK.hpp
 RIADMW_SomeUIFixes/UnrealContainers.hpp
 RIADMW_SomeUIFixes/UtfN.hpp
 RIADMW_SomeUIFixes/framework.h
+
+# Build artifacts
+RIADMW_SomeUIFixes/_build/
+RIADMW_SomeUIFixes/RIADMW_SomeUIFixes.asi
+RIADMW_SomeUIFixes/lib/minhook-1.3.3/
+RIADMW_SomeUIFixes/RIADMW_SomeUIFixes_minimal.asi
+builddir-mingw/
+builddir/

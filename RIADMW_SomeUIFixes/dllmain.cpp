@@ -6,8 +6,7 @@
 using namespace SDK;
 
 constexpr float TARGET_ASPECT = 16.0f / 9.0f;
-constexpr int GENGINE_TICK_VTABLE = 94;        // qword_14C033718 + 752LL uhh
-constexpr uintptr_t GENGINE_PTR_RVA = 0xC033718; // qword_14C033718
+constexpr uintptr_t PROCESSEVENT_RVA = 0x01821740; // from OffsetsInfo.json (new build)
 
 std::atomic<bool> g_Running{ true };
 std::atomic<bool> g_Ready{ false };
@@ -23,16 +22,10 @@ UClass* g_CinematicPauseMenuClass = nullptr;
 UClass* g_SimplePauseMenuClass = nullptr;
 UClass* g_PauseMenuOption2Class = nullptr;
 UClass* g_CameraClass = nullptr;
+UFunction* g_TickFunc = nullptr;
 
-typedef void (*FEngineTick)(UEngine*, float, bool);
-FEngineTick g_OrigTick = nullptr;
-void* g_TickTarget = nullptr;
-
-UWorld* GetWorld() 
-{
-	auto ptr = reinterpret_cast<UWorld**>(InSDKUtils::GetImageBase() + Offsets::GWorld);
-	return ptr ? *ptr : nullptr;
-}
+typedef void (*UProcessEvent)(UObject*, UFunction*, void*);
+UProcessEvent g_OrigProcessEvent = nullptr;
 
 static void ApplyFullWidthToFadeOrCinemaScope(UWidget* w, float negW)
 {
@@ -76,15 +69,13 @@ void CalcConstrainedSize(FVector2D vp, float uiScale)
 	}
 }
 
-void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode) 
+void DoWork()
 {
-	g_OrigTick(Engine, DeltaSeconds, bIdleMode);
-
 	if (!g_Ready) 
 		return;
 
 	bool bIsDimUniverse = false;
-	UWorld* World = GetWorld();
+	UWorld* World = UWorld::GetWorld();
 	if (!World)
 		return;
 	if (World) 
@@ -169,21 +160,35 @@ void HookedEngineTick(UEngine* Engine, float DeltaSeconds, bool bIdleMode)
 	}
 }
 
+// Run DoWork() at most once per ~16 ms (~60 Hz), regardless of widget count.
+static std::atomic<uint64_t> g_LastWorkMs{ 0 };
+
+void HookedProcessEvent(UObject* Object, UFunction* Function, void* Parms)
+{
+	g_OrigProcessEvent(Object, Function, Parms);
+
+	if (!g_Ready || !Function || Function != g_TickFunc)
+		return;
+
+	uint64_t now = GetTickCount64();
+	uint64_t last = g_LastWorkMs.load(std::memory_order_relaxed);
+	if (now - last >= 16)
+	{
+		g_LastWorkMs.store(now, std::memory_order_relaxed);
+		DoWork();
+	}
+}
+
 bool InstallHook() 
 {
 	uintptr_t base = InSDKUtils::GetImageBase();
-	UEngine* Engine = *reinterpret_cast<UEngine**>(base + GENGINE_PTR_RVA);
-
-	if (!Engine)
-		return false;
-
-	void** vtable = *reinterpret_cast<void***>(Engine);
-	g_TickTarget = vtable[GENGINE_TICK_VTABLE];
 
 	if (MH_Initialize() != MH_OK)
 		return false;
 
-	if (MH_CreateHook(g_TickTarget, &HookedEngineTick, reinterpret_cast<void**>(&g_OrigTick)) != MH_OK || MH_EnableHook(g_TickTarget) != MH_OK)
+	void* Target = reinterpret_cast<void*>(base + PROCESSEVENT_RVA);
+
+	if (MH_CreateHook(Target, reinterpret_cast<void*>(&HookedProcessEvent), reinterpret_cast<void**>(&g_OrigProcessEvent)) != MH_OK || MH_EnableHook(Target) != MH_OK)
 	{
 		MH_Uninitialize();
 		return false;
@@ -195,7 +200,7 @@ void MainThread()
 {
 	while (g_Running) 
 	{
-		UWorld* World = GetWorld();
+		UWorld* World = UWorld::GetWorld();
 		if (World) // World* should be enabled by this time but anyways
 		{
 			FVector2D vp = UWidgetLayoutLibrary::GetViewportSize(World);
@@ -218,6 +223,7 @@ void MainThread()
 	g_SimplePauseMenuClass   = UWB_SimplePauseMenu_C::StaticClass();
 	g_PauseMenuOption2Class  = UWB_PauseMenu_Option2_C::StaticClass();
 	g_CameraClass     = UCameraComponent::StaticClass();
+	g_TickFunc        = UUserWidget::StaticClass()->GetFunction("UserWidget", "Tick");
 
 	if (!InstallHook())
 		return;
@@ -227,7 +233,7 @@ void MainThread()
 		Sleep(1000);
 	g_Ready = false;
 
-	MH_DisableHook(g_TickTarget);
+	MH_DisableHook(MH_ALL_HOOKS);
 	MH_Uninitialize();
 
 	FreeLibraryAndExitThread(g_Module, 0);
